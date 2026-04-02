@@ -25,12 +25,35 @@ import argparse
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
-import nltk
-nltk.download('averaged_perceptron_tagger_eng')
+# import nltk
+# nltk.download('averaged_perceptron_tagger_eng')
+# nltk.download('averaged_perceptron_tagger_eng', download_dir="nltk_data")
+
 import pronouncing
+import logging
+logging.basicConfig(level=logging.DEBUG)
+import nltk
+from pathlib import Path
+
+
 
 Prosody = Dict[str, Any]
 ProsodyStore = Union[Prosody, List[Prosody]]
+
+
+def setup_nltk():
+
+    base = Path(__file__).parent
+    nltk_path = base / "nltk_data"
+
+    nltk.data.path.append(str(nltk_path))
+
+    try:
+        nltk.data.find("taggers/averaged_perceptron_tagger_eng")
+    except LookupError:
+        raise RuntimeError(
+            "NLTK tagger missing. Ensure nltk_data folder is included."
+        )
 
 # -----------------------------
 # Optional G2P
@@ -48,14 +71,15 @@ def _g2p_phones_for_word(word: str) -> List[str]:
     if not _G2P_AVAILABLE:
         return []
     g2p = G2p()
-    toks = g2p(word)
+    toks = g2p(word) # example: ['M', 'AH0', 'S', 'P', 'IY1', 'Z', 'AH0', 'M']
     phones: List[str] = []
     for t in toks:
         if not t or t.isspace():
             continue
         if t in {"'", '"', ".", ",", "!", "?", ":", ";", "-", "—", "–", "(", ")", "[", "]", "{", "}"}:
             continue
-        phones.append(t)
+        phones.append(t) 
+    print(f"The phones: {phones}") # example: ['G', 'IY1', 'P', 'AH0', 'T', 'IY0']
     return [" ".join(phones)] if phones else []
 
 
@@ -65,7 +89,8 @@ def _g2p_phones_for_word(word: str) -> List[str]:
 def _prosodies_from_phones(phones_list: List[str], normalize_secondary_stress: bool = True) -> List[Prosody]:
     prosodies: List[Prosody] = []
     for phones in phones_list:
-        stresses = pronouncing.stresses(phones)
+        stresses = pronouncing.stresses(phones) #example:  0100
+        logging.debug(f"The stresses: {stresses}")
         stress = [int(s) for s in stresses if s.isdigit()]
         if normalize_secondary_stress:
             stress = [1 if x == 2 else x for x in stress]
@@ -77,6 +102,7 @@ def _prosodies_from_phones(phones_list: List[str], normalize_secondary_stress: b
         if syllables == 0:
             continue
         prosodies.append({"stress": stress, "vowels": vowel_seq, "syllables": syllables})
+        logging.debug(f"The prosody list: {prosodies}")
 
     # de-dup
     uniq: List[Prosody] = []
@@ -91,6 +117,7 @@ def _prosodies_from_phones(phones_list: List[str], normalize_secondary_stress: b
 
 def get_prosodies_cmu(word: str) -> List[Prosody]:
     phones_list = pronouncing.phones_for_word(word)
+    logging.debug(f"The phones_list of the word: {phones_list}") #['TH AH1 N D ER0 B AO2 L T']
     if not phones_list:
         return []
     return _prosodies_from_phones(phones_list, normalize_secondary_stress=True)
@@ -301,6 +328,60 @@ def find_rhymes(
     return out[:top_n]
 
 
+
+#---------------------
+# For APIs and desktop
+#---------------------
+def find_rhymes_api(
+    word: str,
+    *,
+    db_path: Optional[Path] = None,
+    g2p_cache_path: Optional[Path] = None,
+    top_n: int = 50,
+    threshold: float = 0.6,
+    strict_length: bool = False,
+    max_syll_diff_loose: int = 2,
+    max_syllables: Optional[int] = None,
+    use_g2p: bool = True
+) -> List[Tuple[str, float]]:
+
+    """
+    Public function to find rhymes without using CLI.
+
+    Can be used in APIs, desktop apps, or other modules.
+    """
+    default_path_db = Path(__file__).parent / "stress_dictionary.json"
+    default_path_g2p = Path(__file__).parent / "g2p_cache.json"
+
+    setup_nltk()
+
+    # Load database
+    db: Dict[str, Any] = load_json(default_path_db)
+
+    # Load G2P cache
+    g2p_cache: Dict[str, Any] = load_json(default_path_g2p)
+
+    dirty = [False]
+
+    results = find_rhymes(
+        word,
+        db,
+        top_n=top_n,
+        threshold=threshold,
+        strict_length=strict_length,
+        max_syll_diff_loose=max_syll_diff_loose,
+        max_syllables=max_syllables,
+        use_g2p=use_g2p,
+        g2p_cache=g2p_cache,
+        dirty=dirty
+    )
+
+    # Save cache if updated
+    if dirty[0]:
+        save_json(g2p_cache_path, g2p_cache)
+
+    return results
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--word", required=True)
@@ -351,4 +432,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    rhymes = find_rhymes_api("timezone")
+    print(rhymes)

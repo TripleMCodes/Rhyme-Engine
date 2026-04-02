@@ -1,0 +1,32 @@
+{
+  "mspacium": [
+    {
+      "stress": [
+        0,
+        1,
+        0
+      ],
+      "vowels": [
+        "AH",
+        "IY",
+        "AH"
+      ],
+      "syllables": 3
+    }
+  ],
+  "geepeetee": [
+    {
+      "stress": [
+        1,
+        0,
+        0
+      ],
+      "vowels": [
+        "IY",
+        "AH",
+        "IY"
+      ],
+      "syllables": 3
+    }
+  ]
+}
