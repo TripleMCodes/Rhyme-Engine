@@ -25,21 +25,14 @@ import argparse
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
-# import nltk
-# nltk.download('averaged_perceptron_tagger_eng')
-# nltk.download('averaged_perceptron_tagger_eng', download_dir="nltk_data")
-
 import pronouncing
 import logging
 logging.basicConfig(level=logging.DEBUG)
 import nltk
 from pathlib import Path
 
-
-
 Prosody = Dict[str, Any]
 ProsodyStore = Union[Prosody, List[Prosody]]
-
 
 def setup_nltk():
 
@@ -332,55 +325,208 @@ def find_rhymes(
 #---------------------
 # For APIs and desktop
 #---------------------
+# def find_rhymes_api(
+#     word: str,
+#     *,
+#     db_path: Optional[Path] = None,
+#     g2p_cache_path: Optional[Path] = None,
+#     top_n: int = 50,
+#     threshold: float = 0.6,
+#     strict_length: bool = False,
+#     max_syll_diff_loose: int = 2,
+#     max_syllables: Optional[int] = None,
+#     use_g2p: bool = True
+# ) -> List[Tuple[str, float]]:
+
+#     """
+#     Public function to find rhymes without using CLI.
+
+#     Can be used in APIs, desktop apps, or other modules.
+#     """
+#     default_path_db = Path(__file__).parent / "stress_dictionary.json"
+#     default_path_g2p = Path(__file__).parent / "g2p_cache.json"
+
+#     setup_nltk()
+
+#     # Load database
+#     db: Dict[str, Any] = load_json(default_path_db)
+
+#     # Load G2P cache
+#     g2p_cache: Dict[str, Any] = load_json(default_path_g2p)
+
+#     dirty = [False]
+
+#     results = find_rhymes(
+#         word,
+#         db,
+#         top_n=top_n,
+#         threshold=threshold,
+#         strict_length=strict_length,
+#         max_syll_diff_loose=max_syll_diff_loose,
+#         max_syllables=max_syllables,
+#         use_g2p=use_g2p,
+#         g2p_cache=g2p_cache,
+#         dirty=dirty
+#     )
+
+#     # Save cache if updated
+#     if dirty[0]:
+#         save_json(g2p_cache_path, g2p_cache)
+
+#     return results
+
+
+
+
+import re
+from pathlib import Path
+from typing import List, Tuple, Dict, Optional, Any
+from itertools import product
+
+
+# -----------------------------
+# Split phrase into words
+# -----------------------------
+def split_phrase(phrase: str) -> List[str]:
+    return re.findall(r"[a-zA-Z']+", phrase.lower())
+
+
+# -----------------------------
+# Build phrasal rhymes
+# -----------------------------
+import random
+from itertools import product
+
+
+def build_phrasal_rhymes(
+    phrase_results,
+    top_phrases=30,
+    min_phrase_score=0.7,
+    randomize=True,
+    diversity_strength=0.3
+):
+
+    word_lists = list(phrase_results.values())
+    combinations = list(product(*word_lists))
+
+    phrases = []
+
+    for combo in combinations:
+        words = [w[0] for w in combo]
+        score = sum(w[1] for w in combo) / len(combo)
+
+        if score >= min_phrase_score:
+            phrases.append((" ".join(words), score))
+
+    # sort by score
+    phrases.sort(key=lambda x: x[1], reverse=True)
+
+    if not randomize:
+        return phrases[:top_phrases]
+
+    # weighted randomness
+    top_pool = phrases[:int(len(phrases) * diversity_strength) or 10]
+
+    random.shuffle(top_pool)
+
+    return top_pool[:top_phrases]
+
+# -----------------------------
+# Find rhymes for phrase
+# -----------------------------
 def find_rhymes_api(
-    word: str,
+    phrase: str,
     *,
     db_path: Optional[Path] = None,
     g2p_cache_path: Optional[Path] = None,
-    top_n: int = 50,
-    threshold: float = 0.6,
+    top_n: int = 30,
+    threshold: float = 0.8,
     strict_length: bool = False,
     max_syll_diff_loose: int = 2,
     max_syllables: Optional[int] = None,
-    use_g2p: bool = True
-) -> List[Tuple[str, float]]:
+    use_g2p: bool = True,
+    top_phrases: int = 50,
+    min_phrase_score: float = 0.8
+) -> Dict[str, Any]:
 
-    """
-    Public function to find rhymes without using CLI.
+    default_db = Path(__file__).parent / "stress_dictionary.json"
+    default_g2p = Path(__file__).parent / "g2p_cache.json"
 
-    Can be used in APIs, desktop apps, or other modules.
-    """
-    default_path_db = Path(__file__).parent / "stress_dictionary.json"
-    default_path_g2p = Path(__file__).parent / "g2p_cache.json"
+    db_path = db_path or default_db
+    g2p_cache_path = g2p_cache_path or default_g2p
 
     setup_nltk()
 
-    # Load database
-    db: Dict[str, Any] = load_json(default_path_db)
-
-    # Load G2P cache
-    g2p_cache: Dict[str, Any] = load_json(default_path_g2p)
+    db: Dict[str, Any] = load_json(db_path)
+    g2p_cache: Dict[str, Any] = load_json(g2p_cache_path)
 
     dirty = [False]
 
-    results = find_rhymes(
-        word,
-        db,
-        top_n=top_n,
-        threshold=threshold,
-        strict_length=strict_length,
-        max_syll_diff_loose=max_syll_diff_loose,
-        max_syllables=max_syllables,
-        use_g2p=use_g2p,
-        g2p_cache=g2p_cache,
-        dirty=dirty
-    )
+    words = split_phrase(phrase)
 
-    # Save cache if updated
+    print(f"words are: {words}")
+
+    phrase_results: Dict[str, List[Tuple[str, float]]] = {}
+
+
+    if len(words) == 1:
+        results = find_rhymes(
+            words[0],
+            db,
+            top_n=top_n,
+            threshold=threshold,
+            strict_length=strict_length,
+            max_syll_diff_loose=max_syll_diff_loose,
+            max_syllables=max_syllables,
+            use_g2p=use_g2p,
+            g2p_cache=g2p_cache,
+            dirty=dirty
+        )
+
+        phrase_results[words[0]] = results
+        phrasal_rhymes = {}
+    else:
+        # -----------------------------
+        # Find rhymes per word
+        # -----------------------------
+        for word in words:
+            results = find_rhymes(
+                word,
+                db,
+                top_n=top_n,
+                threshold=threshold,
+                strict_length=strict_length,
+                max_syll_diff_loose=max_syll_diff_loose,
+                max_syllables=max_syllables,
+                use_g2p=use_g2p,
+                g2p_cache=g2p_cache,
+                dirty=dirty
+            )
+
+            phrase_results[word] = results
+
+        # -----------------------------
+        # Build phrasal rhymes
+        # -----------------------------
+        phrasal_rhymes = build_phrasal_rhymes(
+            phrase_results,
+            top_phrases=top_phrases,
+            min_phrase_score=min_phrase_score
+        )
+
+    # Save cache
     if dirty[0]:
         save_json(g2p_cache_path, g2p_cache)
 
-    return results
+    return {
+        "input": phrase,
+        "words": words,
+        "word_rhymes": phrase_results,
+        "phrasal_rhymes": phrasal_rhymes
+    }
+
+
+
 
 def main() -> None:
     p = argparse.ArgumentParser()
@@ -432,6 +578,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    import json
     # main()
-    rhymes = find_rhymes_api("timezone")
+    rhymes = find_rhymes_api("Time will tell")
+    rhymes = json.dumps(rhymes)
     print(rhymes)
