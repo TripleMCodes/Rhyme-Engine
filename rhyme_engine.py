@@ -25,6 +25,7 @@ import argparse
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+# from django import db
 import pronouncing
 import logging
 logging.basicConfig(level=logging.DEBUG)
@@ -440,9 +441,9 @@ def find_rhymes_api(
     db_path: Optional[Path] = None,
     g2p_cache_path: Optional[Path] = None,
     top_n: int = 30,
-    threshold: float = 0.8,
+    threshold: float = 0.6,
     strict_length: bool = False,
-    max_syll_diff_loose: int = 2,
+    max_syll_diff_loose: int = 0,
     max_syllables: Optional[int] = None,
     use_g2p: bool = True,
     top_phrases: int = 50,
@@ -514,6 +515,23 @@ def find_rhymes_api(
             min_phrase_score=min_phrase_score
         )
 
+        words_joined = "".join(words)
+        results_2 = find_rhymes(
+                words_joined,
+                db,
+                top_n=top_n,
+                threshold=threshold,
+                strict_length=strict_length,
+                max_syll_diff_loose=max_syll_diff_loose,
+                max_syllables=max_syllables,
+                use_g2p=use_g2p,
+                g2p_cache=g2p_cache,
+                dirty=dirty
+            )
+
+        phrase_results["phrase_to_word_rhymes"] = results_2
+
+
     # Save cache
     if dirty[0]:
         save_json(g2p_cache_path, g2p_cache)
@@ -580,6 +598,10 @@ def main() -> None:
 if __name__ == "__main__":
     import json
     # main()
+    base_path = Path(__file__).parent / "test.json"
     rhymes = find_rhymes_api("Time will tell")
     rhymes = json.dumps(rhymes)
-    print(rhymes)
+
+    with open(base_path, "w", encoding="utf-8") as f:
+        f.write(rhymes)
+   
